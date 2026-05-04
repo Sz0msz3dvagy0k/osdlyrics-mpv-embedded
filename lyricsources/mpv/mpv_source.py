@@ -72,6 +72,20 @@ def _query_mpv(sock_path, prop):
     return response.get('data')
 
 
+
+
+def _resolve_socket_path(source):
+    if _socket_path:
+        return _socket_path
+    env_path = os.environ.get('OSDLYRICS_MPV_SOCKET')
+    if env_path:
+        return env_path
+    try:
+        cfg_path = source.config_proxy.get_string('MPV/socket', '')
+    except Exception:
+        cfg_path = ''
+    return cfg_path or None
+
 def _get_embedded_lyrics(sock_path):
     """Try common metadata keys used by containers for embedded lyrics."""
     for prop in ('metadata/lyrics', 'metadata/LYRICS',
@@ -95,15 +109,16 @@ class MpvLyricSource(BaseLyricSourcePlugin):
         super().__init__(id=MPV_SOURCE_ID, name=MPV_SOURCE_NAME)
 
     def do_search(self, metadata):
-        if not _socket_path:
-            logging.error('mpv lyric source: no --socket argument provided')
+        sock_path = _resolve_socket_path(self)
+        if not sock_path:
+            logging.error('mpv lyric source: no socket path configured')
             return []
 
         try:
-            lyrics = _get_embedded_lyrics(_socket_path)
+            lyrics = _get_embedded_lyrics(sock_path)
         except Exception as e:
             logging.warning('mpv lyric source: failed to query socket %s: %s',
-                            _socket_path, e)
+                            sock_path, e)
             return []
 
         if not lyrics:
@@ -116,7 +131,7 @@ class MpvLyricSource(BaseLyricSourcePlugin):
                 artist=metadata.artist or '',
                 album=metadata.album or '',
                 sourceid=MPV_SOURCE_ID,
-                downloadinfo=_socket_path,
+                downloadinfo=sock_path,
             )
         ]
 

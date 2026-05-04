@@ -849,6 +849,10 @@ _init_dbus_connection_done (void)
 
   /* Initialize display modules */
   OlConfigProxy *config = ol_config_proxy_get_instance ();
+  if (_arg_socket != NULL && _arg_socket[0] != '\0')
+  {
+    ol_config_proxy_set_string (config, "MPV/socket", _arg_socket);
+  }
   _display_mode_changed (config, "General/display-mode-osd", NULL);
   _display_mode_changed (config, "General/display-mode-scroll", NULL);
   g_signal_connect (config, "changed::General/display-mode-osd",
