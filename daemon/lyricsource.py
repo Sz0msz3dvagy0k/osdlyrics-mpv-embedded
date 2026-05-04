@@ -216,9 +216,10 @@ class LyricSource(dbus.service.Object):
     def Search(self, metadata, sources):
         self._n_search_tickets += 1
         ticket = self._n_search_tickets
+        selected_sources = ['mpv'] if 'mpv' in self._sources else []
         task = {
             'metadata': metadata,
-            'sources': [str(id) for id in sources],
+            'sources': selected_sources,
             'ticket': None,
             'failure': None,    # See comments in search_complete_cb()
         }
@@ -270,10 +271,7 @@ class LyricSource(dbus.service.Object):
                          in_signature='',
                          out_signature='aa{sv}')
     def ListSources(self):
-        enabled = self._config.get_string_list('Download/download-engine')
-        sources = [
-            {'id': id, 'name': v['name'], 'enabled': id in enabled}
-            for id, v in self._sources.items()
-        ]
-        order = {id: i for i, id in enumerate(enabled)}
-        return sorted(sources, key=lambda it: (-it['enabled'], order.get(it['id'], 1 << 31)))
+        source = self._sources.get('mpv')
+        if source is None:
+            return []
+        return [{'id': 'mpv', 'name': source['name'], 'enabled': True}]

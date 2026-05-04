@@ -1696,6 +1696,10 @@ ol_option_show ()
     options.lrc_filename = ol_gui_get_widget ("lrc-filename");
     options.lrc_filename_text = ol_gui_get_widget ("lrc-filename-text");
     options.lrc_filename_sample = ol_gui_get_widget ("lrc-filename-sample");
+    /* Embedded mpv lyrics are the only supported import path. Hide legacy controls. */
+    gtk_widget_hide (ol_gui_get_widget ("lrc-path-frame1"));
+    gtk_widget_hide (ol_gui_get_widget ("lrc-path-frame"));
+    gtk_widget_hide (ol_gui_get_widget ("vbox-download-engine"));
     options.startup_player = ol_gui_get_widget ("startup-player");
     options.startup_player_cb = ol_gui_get_widget ("startup-player-cb");
     init_startup_player (options.startup_player_cb);

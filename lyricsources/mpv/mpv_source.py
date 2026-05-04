@@ -30,10 +30,14 @@ MPV_SOURCE_NAME = 'mpv (embedded lyrics)'
 
 # The socket path is read once at import time from --socket=<path> argument.
 _socket_path = None
+_filtered_argv = [sys.argv[0]]
 for _arg in sys.argv[1:]:
     if _arg.startswith('--socket='):
         _socket_path = _arg[len('--socket='):]
-        break
+        continue
+    _filtered_argv.append(_arg)
+# Base App uses optparse and rejects unknown args. Strip plugin-specific args first.
+sys.argv = _filtered_argv
 
 
 def _query_mpv(sock_path, prop):
