@@ -20,6 +20,7 @@
 
 import json
 import logging
+import os
 import socket
 import sys
 
@@ -29,7 +30,7 @@ MPV_SOURCE_ID = 'mpv'
 MPV_SOURCE_NAME = 'mpv (embedded lyrics)'
 
 # The socket path is read once at import time from --socket=<path> argument.
-_socket_path = None
+_socket_path = os.environ.get('OSDLYRICS_MPV_SOCKET')
 _filtered_argv = [sys.argv[0]]
 for _arg in sys.argv[1:]:
     if _arg.startswith('--socket='):

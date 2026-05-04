@@ -53,6 +53,7 @@ gboolean _arg_debug_cb (const gchar *option_name,
                         gpointer data,
                         GError **error);
 static gboolean _arg_version;
+static gchar *_arg_socket = NULL;
 
 static GOptionEntry cmdargs[] =
 {
@@ -60,6 +61,8 @@ static GOptionEntry cmdargs[] =
     N_ ("The level of debug messages to log, can be 'none', 'error', 'debug', or 'info'"), "level" },
   { "version", 'v', 0, G_OPTION_ARG_NONE, &_arg_version,
     N_ ("Show version information"), NULL},
+  { "socket", 0, 0, G_OPTION_ARG_STRING, &_arg_socket,
+    N_ ("mpv IPC socket path for embedded lyrics"), "path" },
   { NULL }
 };
 
@@ -571,6 +574,10 @@ _parse_cmd_args (int *argc, char ***argv)
   {
     printf ("%s %s\n", PROGRAM_NAME, VERSION);
     exit (0);
+  }
+  if (_arg_socket != NULL && _arg_socket[0] != '\0')
+  {
+    g_setenv ("OSDLYRICS_MPV_SOCKET", _arg_socket, TRUE);
   }
   g_option_context_free (context);
 }
