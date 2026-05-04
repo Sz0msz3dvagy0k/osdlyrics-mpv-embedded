@@ -28,11 +28,13 @@ from osdlyrics.lyricsource import BaseLyricSourcePlugin, SearchResult
 MPV_SOURCE_ID = 'mpv'
 MPV_SOURCE_NAME = 'mpv (embedded lyrics)'
 
-# The socket path is read once at import time from --socket=<path> argument.
+# Read the --socket=<path> argument and remove it from sys.argv so that the
+# App's option parser (optparse.OptionParser) does not reject it as unknown.
 _socket_path = None
-for _arg in sys.argv[1:]:
+for _i, _arg in enumerate(sys.argv[1:], 1):
     if _arg.startswith('--socket='):
         _socket_path = _arg[len('--socket='):]
+        del sys.argv[_i]
         break
 
 
