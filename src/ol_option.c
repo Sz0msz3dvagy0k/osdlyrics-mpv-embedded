@@ -20,6 +20,7 @@
 #include <string.h>
 #include <gtk/gtkwidget.h>
 #include <gtk/gtkdialog.h>
+#include <gtk/gtknotebook.h>
 #include <gtk/gtkcellrenderertext.h>
 #include <gtk/gtktree.h>
 #include <gtk/gtktreeselection.h>
@@ -1696,6 +1697,19 @@ ol_option_show ()
     options.lrc_filename = ol_gui_get_widget ("lrc-filename");
     options.lrc_filename_text = ol_gui_get_widget ("lrc-filename-text");
     options.lrc_filename_sample = ol_gui_get_widget ("lrc-filename-sample");
+    /* Embedded mpv lyrics are the only supported import path. Hide legacy controls. */
+    gtk_widget_hide (ol_gui_get_widget ("lrc-path-frame1"));
+    gtk_widget_hide (ol_gui_get_widget ("lrc-path-frame"));
+    gtk_widget_hide (ol_gui_get_widget ("vbox-download-engine"));
+    GtkNotebook *pref_notebook = GTK_NOTEBOOK (ol_gui_get_widget ("notebook1"));
+    GtkWidget *lyric_location_page = ol_gui_get_widget ("vbox2");
+    GtkWidget *network_page = ol_gui_get_widget ("vbox3");
+    gint lyric_location_index = gtk_notebook_page_num (pref_notebook, lyric_location_page);
+    if (lyric_location_index >= 0)
+      gtk_notebook_remove_page (pref_notebook, lyric_location_index);
+    gint network_index = gtk_notebook_page_num (pref_notebook, network_page);
+    if (network_index >= 0)
+      gtk_notebook_remove_page (pref_notebook, network_index);
     options.startup_player = ol_gui_get_widget ("startup-player");
     options.startup_player_cb = ol_gui_get_widget ("startup-player-cb");
     init_startup_player (options.startup_player_cb);
