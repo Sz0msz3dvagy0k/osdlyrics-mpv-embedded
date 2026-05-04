@@ -72,6 +72,16 @@ def _query_mpv(sock_path, prop):
     return response.get('data')
 
 
+def _get_embedded_lyrics(sock_path):
+    """Try common metadata keys used by containers for embedded lyrics."""
+    for prop in ('metadata/lyrics', 'metadata/LYRICS',
+                 'metadata/unsyncedlyrics', 'metadata/UNSYNCEDLYRICS'):
+        lyrics = _query_mpv(sock_path, prop)
+        if lyrics:
+            return lyrics
+    return None
+
+
 class MpvLyricSource(BaseLyricSourcePlugin):
     """Lyric source that fetches embedded lyrics directly from mpv via its IPC socket.
 
@@ -90,7 +100,7 @@ class MpvLyricSource(BaseLyricSourcePlugin):
             return []
 
         try:
-            lyrics = _query_mpv(_socket_path, 'metadata/lyrics')
+            lyrics = _get_embedded_lyrics(_socket_path)
         except Exception as e:
             logging.warning('mpv lyric source: failed to query socket %s: %s',
                             _socket_path, e)
@@ -113,7 +123,7 @@ class MpvLyricSource(BaseLyricSourcePlugin):
     def do_download(self, downloadinfo):
         sock_path = str(downloadinfo)
         try:
-            lyrics = _query_mpv(sock_path, 'metadata/lyrics')
+            lyrics = _get_embedded_lyrics(sock_path)
         except Exception as e:
             raise RuntimeError(
                 'mpv lyric source: failed to download lyrics from %s: %s' %
