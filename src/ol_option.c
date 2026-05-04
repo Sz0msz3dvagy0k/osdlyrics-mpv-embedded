@@ -20,6 +20,7 @@
 #include <string.h>
 #include <gtk/gtkwidget.h>
 #include <gtk/gtkdialog.h>
+#include <gtk/gtknotebook.h>
 #include <gtk/gtkcellrenderertext.h>
 #include <gtk/gtktree.h>
 #include <gtk/gtktreeselection.h>
