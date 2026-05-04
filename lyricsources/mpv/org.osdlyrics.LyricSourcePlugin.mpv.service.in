@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.osdlyrics.LyricSourcePlugin.mpv
+Exec=@PYTHON@ @pkglibdir@/lyricsources/mpv/mpv_source.py
