@@ -18,6 +18,7 @@
  * along with OSD Lyrics.  If not, see <https://www.gnu.org/licenses/>. 
  */
 #include <string.h>
+#include <unistd.h>
 #include "ol_metadata.h"
 #include "ol_config_proxy.h"
 #include "ol_player.h"
@@ -49,6 +50,10 @@ struct _OlOsdModule
   OlOsdWindow *window;
   OlOsdToolbar *toolbar;
   guint message_source;
+  gboolean layer_shell_enabled;
+  gboolean layer_shell_visible;
+  GPid layer_shell_pid;
+  gint layer_shell_stdin;
   GList *config_bindings;
   gboolean visible_when_stopped;
 };
@@ -96,6 +101,10 @@ static void ol_osd_module_search_fail_message (struct OlDisplayModule *module,
 static void ol_osd_module_download_fail_message (struct OlDisplayModule *module,
                                                  const char *message);
 static void ol_osd_module_clear_message (struct OlDisplayModule *module);
+static gboolean layer_shell_helper_available (void);
+static gboolean start_layer_shell_helper (OlOsdModule *osd);
+static void stop_layer_shell_helper (OlOsdModule *osd);
+static void sync_layer_shell_helper (OlOsdModule *osd);
 
 /** internal functions */
 
@@ -314,6 +323,12 @@ _line_count_changed_cb (OlConfigProxy *config,
 {
   osd->line_count = ol_config_proxy_get_int (config, key);
   ol_osd_window_set_line_count (osd->window, osd->line_count);
+  if (osd->line_count == 1)
+  {
+    ol_osd_window_set_lyric (osd->window, 1, NULL);
+    ol_osd_window_set_percentage (osd->window, 1, 0.0);
+  }
+  sync_layer_shell_helper (osd);
 }
 
 static void
@@ -416,6 +431,8 @@ ol_osd_module_update_next_lyric (OlOsdModule *osd, OlLrcIter *iter)
   if (osd->line_count == 1)
   {
     osd->lrc_next_id = -1;
+    ol_osd_window_set_lyric (osd->window, 1, NULL);
+    ol_osd_window_set_percentage (osd->window, 1, 0.0);
     return;
   }
   if (ol_lrc_iter_next (iter))
@@ -434,10 +451,9 @@ ol_osd_module_update_next_lyric (OlOsdModule *osd, OlLrcIter *iter)
   }
   if (osd->lrc_next_id != id)
   {
-    int next_line = 1 - osd->current_line;
     osd->lrc_next_id = id;
-    ol_osd_window_set_lyric (osd->window, next_line, text);
-    ol_osd_window_set_percentage (osd->window, next_line, 0.0);
+    ol_osd_window_set_lyric (osd->window, 1, text);
+    ol_osd_window_set_percentage (osd->window, 1, 0.0);
   }
 }
 
@@ -538,9 +554,15 @@ ol_osd_module_new (struct OlDisplayModule *module,
   reset_lyrics_state (data);
   data->force_refresh_on_set_played_time = FALSE;
   data->message_source = 0;
+  data->layer_shell_enabled = FALSE;
+  data->layer_shell_visible = FALSE;
+  data->layer_shell_pid = 0;
+  data->layer_shell_stdin = -1;
   data->metadata = ol_metadata_new ();
   data->config_bindings = NULL;
   data->visible_when_stopped = TRUE;
+  if (layer_shell_helper_available ())
+    start_layer_shell_helper (data);
   ol_osd_module_init_osd (data);
   g_signal_connect (player,
                     "track-changed",
@@ -572,6 +594,7 @@ ol_osd_module_free (struct OlDisplayModule *module)
     g_object_unref (priv->toolbar);
     priv->toolbar = NULL;
   }
+  stop_layer_shell_helper (priv);
   if (priv->window != NULL)
   {
     gtk_widget_destroy (GTK_WIDGET (priv->window));
@@ -642,9 +665,14 @@ _update_status (OlOsdModule *module)
   gboolean visible = (status != OL_PLAYER_STOPPED ||
                       module->visible_when_stopped);
 
-  gtk_widget_set_visible (GTK_WIDGET (module->window), visible);
+  module->layer_shell_visible = visible;
+  if (module->layer_shell_enabled)
+    gtk_widget_set_visible (GTK_WIDGET (module->window), FALSE);
+  else
+    gtk_widget_set_visible (GTK_WIDGET (module->window), visible);
   if (module->toolbar != NULL && visible)
     ol_osd_toolbar_set_status (module->toolbar, status);
+  sync_layer_shell_helper (module);
 }
 
 static void
@@ -663,31 +691,21 @@ ol_osd_module_set_played_time (struct OlDisplayModule *module,
       gint id = ol_lrc_iter_get_id (iter);
       if (id != priv->lrc_id)
       {
-        if (id == priv->lrc_next_id)
-        {
-          /* advance to the next line */
-          ol_osd_window_set_percentage (priv->window, priv->current_line, 1.0);
-          priv->current_line = 1 - priv->current_line;
-          priv->lrc_id = priv->lrc_next_id;
-          priv->lrc_next_id = -1;
-          ol_osd_window_set_current_line (priv->window, priv->current_line);
-        }
-        else
-        {
-          /* The user seeks the position or there is only 1 line in OSD window.
-             Reset the lyrics. */
-          priv->lrc_id = id;
-          priv->current_line = 0;
-          ol_osd_window_set_current_line (priv->window, 0);
-          ol_osd_window_set_lyric (priv->window, priv->current_line,
-                                   ol_lrc_iter_get_text (iter));
-          ol_osd_module_update_next_lyric (priv, iter);
-        }
+        /* Keep the active lyric on row 0 and the upcoming lyric on row 1. */
+        priv->lrc_id = id;
+        priv->current_line = 0;
+        priv->lrc_next_id = -1;
+        ol_osd_window_set_current_line (priv->window, 0);
+        ol_osd_window_set_lyric (priv->window, 0,
+                                 ol_lrc_iter_get_text (iter));
+        ol_osd_window_set_percentage (priv->window, 0, 0.0);
+        ol_osd_module_update_next_lyric (priv, iter);
       }
       gdouble percentage = ol_lrc_iter_compute_percentage (iter, played_time);
       ol_osd_window_set_current_percentage (priv->window, percentage);
       if (percentage > 0.5 && priv->lrc_next_id == -1)
         ol_osd_module_update_next_lyric (priv, iter);
+      sync_layer_shell_helper (priv);
     }
     else if (priv->lrc_id != -1 || priv->force_refresh_on_set_played_time)
     {
@@ -765,6 +783,7 @@ ol_osd_module_set_message (struct OlDisplayModule *module,
   priv->message_source = g_timeout_add (duration_ms,
                                         (GSourceFunc) hide_message,
                                         (gpointer) priv);
+  sync_layer_shell_helper (priv);
 }
 
 static void
@@ -792,7 +811,9 @@ hide_message (OlOsdModule *osd)
   ol_assert_ret (osd != NULL, FALSE);
   ol_assert_ret (osd->lrc == NULL, FALSE);
   ol_osd_window_set_lyric (osd->window, 0, NULL);
+  ol_osd_window_set_lyric (osd->window, 1, NULL);
   osd->message_source = 0;
+  sync_layer_shell_helper (osd);
   return FALSE;
 }
 
@@ -819,7 +840,108 @@ hide_lyrics (OlOsdModule *osd)
   {
     ol_osd_window_set_lyric (osd->window, 0, NULL);
     ol_osd_window_set_lyric (osd->window, 1, NULL);
+    sync_layer_shell_helper (osd);
   }
+}
+
+static gboolean
+layer_shell_helper_available (void)
+{
+  return g_getenv ("WAYLAND_DISPLAY") != NULL;
+}
+
+static void
+stop_layer_shell_helper (OlOsdModule *osd)
+{
+  if (osd->layer_shell_stdin >= 0)
+  {
+    close (osd->layer_shell_stdin);
+    osd->layer_shell_stdin = -1;
+  }
+  if (osd->layer_shell_pid != 0)
+  {
+    g_spawn_close_pid (osd->layer_shell_pid);
+    osd->layer_shell_pid = 0;
+  }
+  osd->layer_shell_enabled = FALSE;
+}
+
+static gboolean
+start_layer_shell_helper (OlOsdModule *osd)
+{
+  gchar *helper = g_find_program_in_path ("osdlyrics-layer-osd");
+  gchar *fallback_helper = NULL;
+  gboolean use_fallback_helper = FALSE;
+  if (helper == NULL)
+  {
+    fallback_helper = g_build_filename (g_get_current_dir (),
+                                        "tools",
+                                        "osdlyrics-layer-osd",
+                                        NULL);
+    if (g_file_test (fallback_helper, G_FILE_TEST_IS_EXECUTABLE))
+    {
+      helper = fallback_helper;
+      use_fallback_helper = TRUE;
+    }
+  }
+  if (helper == NULL)
+  {
+    g_free (fallback_helper);
+    return FALSE;
+  }
+
+  gchar *argv[] = { helper, NULL };
+  GError *error = NULL;
+  GPid pid = 0;
+  gint stdin_fd = -1;
+  gboolean ok = g_spawn_async_with_pipes (NULL,
+                                          argv,
+                                          NULL,
+                                          G_SPAWN_SEARCH_PATH,
+                                          NULL,
+                                          NULL,
+                                          &pid,
+                                          NULL,
+                                          &stdin_fd,
+                                          NULL,
+                                          &error);
+  g_free (helper);
+  if (!use_fallback_helper)
+    g_free (fallback_helper);
+  if (!ok)
+  {
+    if (error != NULL)
+      g_error_free (error);
+    return FALSE;
+  }
+
+  osd->layer_shell_pid = pid;
+  osd->layer_shell_stdin = stdin_fd;
+  osd->layer_shell_enabled = TRUE;
+  return TRUE;
+}
+
+static void
+sync_layer_shell_helper (OlOsdModule *osd)
+{
+  if (!osd->layer_shell_enabled || osd->layer_shell_stdin < 0 || osd->window == NULL)
+    return;
+
+  const char *current = osd->window->lyrics[0] != NULL ? osd->window->lyrics[0] : "";
+  const char *next = osd->window->lyrics[1] != NULL ? osd->window->lyrics[1] : "";
+  gchar *current_b64 = g_base64_encode ((const guchar *) current, strlen (current));
+  gchar *next_b64 = g_base64_encode ((const guchar *) next, strlen (next));
+  gchar *payload = g_strdup_printf ("STATE\t%d\t%.6f\t%s\t%s\n",
+                                    osd->layer_shell_visible ? 1 : 0,
+                                    ol_osd_window_get_current_percentage (osd->window),
+                                    current_b64,
+                                    next_b64);
+  ssize_t written = write (osd->layer_shell_stdin, payload, strlen (payload));
+  if (written < 0)
+    stop_layer_shell_helper (osd);
+  g_free (payload);
+  g_free (current_b64);
+  g_free (next_b64);
 }
 
 static void
