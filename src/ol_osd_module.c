@@ -927,6 +927,9 @@ layer_shell_helper_available (void)
 static void
 stop_layer_shell_helper (OlOsdModule *osd)
 {
+  ol_debugf ("Stopping layer shell helper, pid: %d, stdin: %d\n",
+             (int) osd->layer_shell_pid,
+             osd->layer_shell_stdin);
   if (osd->layer_shell_stdin >= 0)
   {
     close (osd->layer_shell_stdin);
@@ -965,10 +968,12 @@ start_layer_shell_helper (OlOsdModule *osd)
     helper = g_find_program_in_path ("osdlyrics-layer-osd");
   if (helper == NULL)
   {
+    ol_debug ("Layer shell helper not found");
     g_free (fallback_helper);
     return FALSE;
   }
 
+  ol_debugf ("Starting layer shell helper: %s\n", helper);
   gchar *argv[] = { helper, NULL };
   GError *error = NULL;
   GPid pid = 0;
@@ -984,8 +989,8 @@ start_layer_shell_helper (OlOsdModule *osd)
                                           NULL,
                                           NULL,
                                           &pid,
-                                          NULL,
                                           &stdin_fd,
+                                          NULL,
                                           NULL,
                                           &error);
   g_strfreev (envp);
@@ -994,6 +999,8 @@ start_layer_shell_helper (OlOsdModule *osd)
   if (!ok)
   {
     if (error != NULL)
+      ol_debugf ("Failed to start layer shell helper: %s\n", error->message);
+    if (error != NULL)
       g_error_free (error);
     return FALSE;
   }
@@ -1001,6 +1008,7 @@ start_layer_shell_helper (OlOsdModule *osd)
   osd->layer_shell_pid = pid;
   osd->layer_shell_stdin = stdin_fd;
   osd->layer_shell_enabled = TRUE;
+  ol_debugf ("Layer shell helper started, pid: %d\n", (int) pid);
   return TRUE;
 }
 
@@ -1035,6 +1043,8 @@ sync_layer_shell_helper (OlOsdModule *osd)
     }
     if (written < 0 && errno == EINTR)
       continue;
+    if (written < 0)
+      ol_debugf ("Layer shell write failed: %s\n", strerror (errno));
     stop_layer_shell_helper (osd);
     break;
   }

@@ -150,15 +150,15 @@ class LayerOSD:
         return base64.b64decode(value.encode("ascii")).decode("utf-8", "replace")
 
     def _apply_state(self, visible, percentage, current, upcoming):
-        if not visible or (not current and not upcoming):
+        if not visible:
             self.window.hide()
             return
 
         self.current_label.set_text(current)
         self.next_label.set_text(upcoming)
-        self.next_label.set_visible(bool(upcoming))
         self.progress.set_fraction(max(0.0, min(1.0, percentage)))
         self.window.show_all()
+        self.next_label.set_visible(bool(upcoming))
 
     def _handle_line(self, line):
         parts = line.split("\t")
@@ -183,7 +183,7 @@ class LayerOSD:
         self._buffer += data.decode("utf-8", "replace")
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
-            line = line.strip()
+            line = line.rstrip("\r")
             if line:
                 self._handle_line(line)
         return True
