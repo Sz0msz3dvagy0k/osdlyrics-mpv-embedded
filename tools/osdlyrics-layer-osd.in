@@ -7,8 +7,15 @@ import sys
 
 import gi
 
-gi.require_version("Gtk", "3.0")
-gi.require_version("GtkLayerShell", "0.1")
+try:
+    gi.require_version("Gdk", "3.0")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("GtkLayerShell", "0.1")
+    gi.require_version("Pango", "1.0")
+except Exception as e:
+    sys.stderr.write("osdlyrics-layer-osd: incompatible GI environment: %s\n" % e)
+    sys.exit(1)
+
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, Pango
 
 
@@ -18,6 +25,8 @@ class LayerOSD:
         self.window.set_decorated(False)
         self.window.set_resizable(False)
         self.window.set_title("OSD Lyrics")
+        self.window.set_accept_focus(False)
+        self.window.set_focus_on_map(False)
         self.window.connect("destroy", Gtk.main_quit)
         self.window.connect("delete-event", self._ignore_close)
 
@@ -25,7 +34,6 @@ class LayerOSD:
         GtkLayerShell.set_namespace(self.window, "osdlyrics")
         GtkLayerShell.set_layer(self.window, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_mode(self.window, GtkLayerShell.KeyboardMode.NONE)
-        GtkLayerShell.auto_exclusive_zone_enable(self.window)
         for edge in (GtkLayerShell.Edge.LEFT,
                      GtkLayerShell.Edge.RIGHT,
                      GtkLayerShell.Edge.BOTTOM):
@@ -180,9 +188,14 @@ class LayerOSD:
 
 
 def main():
+    initialized, _argv = Gtk.init_check(sys.argv)
+    if not initialized:
+        sys.stderr.write("osdlyrics-layer-osd: unable to initialize GTK display\n")
+        return 1
     LayerOSD()
     Gtk.main()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
