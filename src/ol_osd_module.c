@@ -52,6 +52,7 @@ struct _OlOsdModule
   OlOsdWindow *window;
   OlOsdToolbar *toolbar;
   guint message_source;
+  gboolean layer_shell_desired;
   gboolean layer_shell_enabled;
   gboolean layer_shell_visible;
   GPid layer_shell_pid;
@@ -517,7 +518,7 @@ ol_osd_module_init_osd (OlOsdModule *osd)
   if (osd->window == NULL)
     return;
 
-  if (!osd->layer_shell_enabled)
+  if (!osd->layer_shell_desired)
   {
     GtkIconTheme *icontheme = gtk_icon_theme_get_default ();
     GdkPixbuf *bg = gtk_icon_theme_load_icon (icontheme,
@@ -576,6 +577,7 @@ ol_osd_module_new (struct OlDisplayModule *module,
   reset_lyrics_state (data);
   data->force_refresh_on_set_played_time = FALSE;
   data->message_source = 0;
+  data->layer_shell_desired = layer_shell_helper_available ();
   data->layer_shell_enabled = FALSE;
   data->layer_shell_visible = FALSE;
   data->layer_shell_pid = 0;
@@ -584,7 +586,7 @@ ol_osd_module_new (struct OlDisplayModule *module,
   data->config_bindings = NULL;
   data->visible_when_stopped = TRUE;
   signal (SIGPIPE, SIG_IGN);
-  if (layer_shell_helper_available ())
+  if (data->layer_shell_desired)
     start_layer_shell_helper (data);
   ol_osd_module_init_osd (data);
   g_signal_connect (player,
@@ -689,9 +691,9 @@ _update_status (OlOsdModule *module)
                       module->visible_when_stopped);
 
   module->layer_shell_visible = visible;
-  if (!module->layer_shell_enabled)
+  if (!module->layer_shell_desired)
     gtk_widget_set_visible (GTK_WIDGET (module->window), visible);
-  if (!module->layer_shell_enabled && module->toolbar != NULL && visible)
+  if (!module->layer_shell_desired && module->toolbar != NULL && visible)
     ol_osd_toolbar_set_status (module->toolbar, status);
   hide_legacy_window_if_layer_enabled (module);
   sync_layer_shell_helper (module);
@@ -971,9 +973,13 @@ start_layer_shell_helper (OlOsdModule *osd)
   GError *error = NULL;
   GPid pid = 0;
   gint stdin_fd = -1;
+  gchar **envp = g_get_environ ();
+  envp = g_environ_setenv (envp, "GDK_BACKEND", "wayland", TRUE);
+  envp = g_environ_unsetenv (envp, "DISPLAY");
+
   gboolean ok = g_spawn_async_with_pipes (NULL,
                                           argv,
-                                          NULL,
+                                          envp,
                                           G_SPAWN_SEARCH_PATH,
                                           NULL,
                                           NULL,
@@ -982,6 +988,7 @@ start_layer_shell_helper (OlOsdModule *osd)
                                           &stdin_fd,
                                           NULL,
                                           &error);
+  g_strfreev (envp);
   g_free (helper);
   g_free (fallback_helper);
   if (!ok)
@@ -1039,7 +1046,7 @@ sync_layer_shell_helper (OlOsdModule *osd)
 static void
 hide_legacy_window_if_layer_enabled (OlOsdModule *osd)
 {
-  if (osd == NULL || !osd->layer_shell_enabled || osd->window == NULL)
+  if (osd == NULL || !osd->layer_shell_desired || osd->window == NULL)
     return;
   if (gtk_widget_get_visible (GTK_WIDGET (osd->window)))
     gtk_widget_hide (GTK_WIDGET (osd->window));
