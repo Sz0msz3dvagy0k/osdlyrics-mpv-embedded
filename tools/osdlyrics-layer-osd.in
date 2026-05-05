@@ -5,6 +5,8 @@ import base64
 import os
 import sys
 
+os.environ["GDK_BACKEND"] = "wayland"
+
 import gi
 
 try:
